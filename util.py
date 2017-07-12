@@ -18,10 +18,37 @@ def print_red(message):
 
 class Util:
 
-    def __init__(self):
+    def __init__(self, path="./input/properties.ini"):
         self.config = configparser.ConfigParser()
-        self.property_file = "./input/properties.ini"
-        self.config.read(self.property_file)
+        self.property_file = path
+        if not self.config.read(self.property_file):
+            raise ValueError("ERROR: Could not read the configuration file at %s" % path)
+
+    # Returns dictionary of OS credentials
+    def load_openstack_credentials(self, cloud_name):
+        try:
+            all_credentials = json.loads(self.config['Cloud']['openstack'])
+            credentials = all_credentials.get(cloud_name)
+            ini_cred_keys = credentials.keys()
+        except:
+            raise ValueError("ERROR: Cloud with name %s not found in configuration file" % cloud_name)
+
+        cred_keys = ["auth_url", "username", "password", "tenant"]
+        for key in cred_keys:
+            if key not in ini_cred_keys:
+                raise ValueError("ERROR: Exepecting %s to be part of cloud credentials" % key)
+
+        return credentials
+
+    # Returns dictionary w/ VM details (e.g. image name and ssh username, etc.)
+    def load_vm_info(self):
+        vm_info = json.loads(self.config['Cloud']['virtual_machines'])
+        expected_keys = ["image", "ssh_username", "network", "security_group"]
+        for key in expected_keys:
+            if key not in vm_info.keys():
+                raise ValueError("ERROR: Exepecting %s to be part of virtual mchine information" % key)
+
+        return vm_info
 
     def load_initial_workers_node_names(self):
         """ initial node names are the same the service names."""

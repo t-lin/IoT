@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import sys
 import json
 import threading
 import time
@@ -15,28 +16,30 @@ from util import Util
 
 
 # Autonomic Manager info
-auth_url = "http://iam.savitestbed.ca:5000/v2.0"
+auth_url = None
 # driver = "openstack"
-user = "username"
-password = "password"
+username = None
+password = None
+tenant_name = None
+
+util = None
+regions_name = None
+core = None
 
 small_flavor = "m1.small"
 medium_flavor = "m1.medium"
 large_flavor = "m1.large"
 xlarge_flavor = "m1.xlarge"
 
-ubuntu14 = "Ubuntu-14-04"
-ubuntu16 = "Ubuntu-16-04"
-tenant_name = "demo2"
-ssh_user = "ubuntu"
+vm_image_name = None
+ssh_user = None
+security_group = None
+network_name = None
 controller_ip = "127.0.0.1"  # this machine is the default controller on which we access cloud;
 # it has docker-machine installed.
 controller_name = 'iot-controller'
-privatekey_path_macos = '/Users/hamzeh/.docker/machine/machines/'
-privatekey_path_linux = '/home/' + ssh_user + '/.docker/machine/machines/'
-security_group = "savi-iot" #TODO: Make this configurable
-network_name = tenant_name + '-net' #TODO: Make this configurable
-                                    #  - Right now, `tenant_name`-net is an unofficial SAVI standard
+#privatekey_path_macos = '/Users/hamzeh/.docker/machine/machines/'
+privatekey_path_linux = None
 
 # Swarm info
 swarm_master_name = "swarm-master"
@@ -78,10 +81,6 @@ wavecloud_token = 'hr1px97yozs5qw3gw33onsjykm9kh4of'
 
 master_shell = ''
 controller_shell = ''
-
-util = Util()
-regions_name = util.load_regions()
-core = regions_name[0]  # the first one would be the core
 
 
 # core_workers_name = ["core-worker"]
@@ -179,13 +178,13 @@ def create_vm(vm_name, user_name, flavor, image, region, driver='openstack', ip=
              "--openstack-flavor-name", flavor, "--openstack-image-name", image,
              "--openstack-tenant-name", tenant_name, "--openstack-region", region,
              "--openstack-sec-groups", security_group, "--openstack-ssh-user", ssh_user, vm_name],
-            store_pid="True", allow_error=True, encoding="utf8")
+             store_pid="True", allow_error=True, encoding="utf8")
 
     elif driver == 'generic':
         result = controller_shell.run(
             ["docker-machine", "create", "--driver", driver, "--generic-ip-address=" + ip,
              "--generic-ssh-key", key, "--generic-ssh-user", user_name],
-            store_pid="True", allow_error=True, encoding="utf8")
+             store_pid="True", allow_error=True, encoding="utf8")
 
     if result.return_code > 0:
         print("ERROR: Provisioning of " + vm_name + " has failed...")
@@ -230,7 +229,7 @@ def provision_iot_controller(driver='', ip=''):
         print("You need to install Docker-Machine and/or Docker on your local machine manually.")
 
     if driver == 'openstack':
-        create_vm(controller_name, user, small_flavor, ubuntu14, 'CORE', driver='openstack')
+        create_vm(controller_name, user, small_flavor, vm_image_name, 'CORE', driver='openstack')
         iot_controller_ip = get_node_ip(controller_name)
         iot_controller_shell = ssh_to(iot_controller_ip, 'ubuntu', controller_name, mode='key')
         try:  # installing docker-machine
@@ -265,18 +264,18 @@ def provision_iot_controller(driver='', ip=''):
 
 
 def provision_cluster():
-    thread = [CreateVMThread(0, swarm_master_name, user, large_flavor, ubuntu14, core)]
+    thread = [CreateVMThread(0, swarm_master_name, username, large_flavor, vm_image_name, core)]
     base = len(thread)
 
     for i in range(0, len(initial_workers_name)):
-        thread.append(CreateVMThread(i + base, initial_workers_name[i], user, flavors_name_workers[i], ubuntu14,
+        thread.append(CreateVMThread(i + base, initial_workers_name[i], username, flavors_name_workers[i], vm_image_name,
                                      regions_name[i]))
-        thread.append(CreateVMThread(i + base + len(initial_workers_name), initial_aggs_name[i], user,
-                                     flavors_name_aggs[i], ubuntu14, regions_name[i]))
+        thread.append(CreateVMThread(i + base + len(initial_workers_name), initial_aggs_name[i], username,
+                                     flavors_name_aggs[i], vm_image_name, regions_name[i]))
 
     for i in range(0, len(initial_db_name)):
         thread.append(CreateVMThread(i + base + len(initial_workers_name) + len(initial_aggs_name),
-                                     initial_db_name[i], user, large_flavor, ubuntu14, core))
+                                     initial_db_name[i], username, large_flavor, vm_image_name, core))
 
     for i in range(0, base + len(initial_workers_name) + len(initial_aggs_name) + len(initial_db_name)):
         thread[i].start()
@@ -891,12 +890,56 @@ def hard_remove_iot_platform():
     else:
         print("So, you are not sure. :-)")
 
+def load_config_file():
+    # Using bracket notation to specify keys to trigger exception if keys don't exist
+
+    # Load credentials
+    global credentials, username, password, auth_url, tenant_name
+    credentials = util.load_openstack_credentials('savi')
+    username = credentials['username']
+    password = credentials['password']
+    auth_url = credentials['auth_url']
+    tenant_name = credentials['tenant']
+
+    # Load regions
+    global regions_name, core
+    regions_name = util.load_regions()
+    core = regions_name[0]  # the first one would be the core
+
+    # Load VM information for boot-up
+    global vm_image_name, ssh_user, network_name, security_group, privatekey_path_linux
+    vm_info = util.load_vm_info()
+    vm_image_name = vm_info['image']
+    ssh_user = vm_info['ssh_username']
+    network_name = vm_info['network']
+    security_group = vm_info['security_group']
+    privatekey_path_linux = '/home/' + ssh_user + '/.docker/machine/machines/'
+
 
 if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        print("Expecting argument:")
+        print("\tcreate\t\tProvisions and configures the IoT infrastructure from scratch")
+        print("\tdestroy\t\tTears down the IoT infrastructure")
+        print("\nOptional argument: Path to configuration file (default: ./input/properties.ini)")
+        exit(0)
+    elif len(sys.argv) == 2: # No custom config file
+        util = Util()
+    elif len(sys.argv) == 3: # Custom config file
+        util = Util(sys.argv[2])
+
+    load_config_file()
+
+    if sys.argv[1] == "create":
+        #print("create")
+        create_iot_platform()
+    elif sys.argv[1] == "destroy":
+        #print("destroy")
+        remove_iot_platform()
+
+    exit(0)
     # init(True, local=False)
     # provision_iot_controller('openstack')
-    create_iot_platform()
-    # remove_iot_platform()
     # redeploy_services()
     # down_scale_swarm_cluster_to_initial_state()
     # hard_remove_iot_platform()
