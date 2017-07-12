@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import json
 import threading
 import time
@@ -16,7 +17,7 @@ from util import Util
 # Autonomic Manager info
 auth_url = "http://iam.savitestbed.ca:5000/v2.0"
 # driver = "openstack"
-user = "hamzeh"
+user = "username"
 password = "password"
 
 small_flavor = "m1.small"
@@ -32,8 +33,10 @@ controller_ip = "127.0.0.1"  # this machine is the default controller on which w
 # it has docker-machine installed.
 controller_name = 'iot-controller'
 privatekey_path_macos = '/Users/hamzeh/.docker/machine/machines/'
-privatekey_path_ubuntu = '/home/ubuntu/.docker/machine/machines/'
-security_group = "savi-iot"
+privatekey_path_linux = '/home/' + ssh_user + '/.docker/machine/machines/'
+security_group = "savi-iot" #TODO: Make this configurable
+network_name = tenant_name + '-net' #TODO: Make this configurable
+                                    #  - Right now, `tenant_name`-net is an unofficial SAVI standard
 
 # Swarm info
 swarm_master_name = "swarm-master"
@@ -42,7 +45,7 @@ core_worker_role = "iot-core-worker"
 edge_worker_role = "iot-edge-worker"
 manager_role = "manager"
 
-locations_name = ["Toronto", "Chicago", "Waterloo", "Montreal"]
+locations_name = ["Toronto", "Carleton", "Waterloo", "York"] #TODO: Make this configurable
 
 # Spark info
 #  do not change this, as other names don't work.
@@ -142,7 +145,7 @@ def ssh_to(ip='127.0.0.1', user_name='', node_name='', mode='', passphrase=''):
         shell = spur.SshShell(
             hostname=ip,
             username=user_name,
-            private_key_file=privatekey_path_macos + node_name + "/id_rsa",
+            private_key_file=privatekey_path_linux + node_name + "/id_rsa",
             missing_host_key=spur.ssh.MissingHostKey.accept
         )
     elif mode == 'password':
@@ -172,7 +175,7 @@ def create_vm(vm_name, user_name, flavor, image, region, driver='openstack', ip=
         result = controller_shell.run(
             ["docker-machine", "create", "--driver", driver, "--openstack-auth-url", auth_url,
              "--openstack-insecure", "--openstack-username", user_name,
-             "--openstack-password", password,
+             "--openstack-password", password, "--openstack-net-name", network_name,
              "--openstack-flavor-name", flavor, "--openstack-image-name", image,
              "--openstack-tenant-name", tenant_name, "--openstack-region", region,
              "--openstack-sec-groups", security_group, "--openstack-ssh-user", ssh_user, vm_name],
@@ -185,7 +188,10 @@ def create_vm(vm_name, user_name, flavor, image, region, driver='openstack', ip=
             store_pid="True", allow_error=True, encoding="utf8")
 
     if result.return_code > 0:
+        print("ERROR: Provisioning of " + vm_name + " has failed...")
         print(result.stderr_output)
+    else:
+        print(vm_name + " is up and running with latest docker engine ...")
 
 
 def delete_vm(name):
@@ -210,7 +216,6 @@ class CreateVMThread(threading.Thread):
     def run(self):
         print(self.vm_name + " is being provisioned ...")
         create_vm(self.vm_name, self.user_name, self.flavor, self.image, self.region)
-        print(self.vm_name + " is up and running with latest docker engine ...")
 
 
 def provision_iot_controller(driver='', ip=''):
@@ -225,7 +230,7 @@ def provision_iot_controller(driver='', ip=''):
         print("You need to install Docker-Machine and/or Docker on your local machine manually.")
 
     if driver == 'openstack':
-        create_vm(controller_name, user, small_flavor, ubuntu16, 'CORE', driver='openstack')
+        create_vm(controller_name, user, small_flavor, ubuntu14, 'CORE', driver='openstack')
         iot_controller_ip = get_node_ip(controller_name)
         iot_controller_shell = ssh_to(iot_controller_ip, 'ubuntu', controller_name, mode='key')
         try:  # installing docker-machine
@@ -571,7 +576,7 @@ def deploy_vis_monomarks():
     command = ["sudo", "docker", "service", "create", "--name", "viz",
                "--publish=5000:8080/tcp", "--constraint", "node.labels.role==" + manager_role,
                "--mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
-               "--reserve-memory", "512M", "--limit-memory", "1G", "manomarks/visualizer"]
+               "--reserve-memory", "512M", "--limit-memory", "1G", "dockersamples/visualizer"]
     result = master_shell.run(command, store_pid="True", allow_error=True, encoding="utf8")
     if result.return_code > 0:
         print(result.stderr_output)
