@@ -1,0 +1,23 @@
+#==========================  Modules configuration ============================
+metricbeat.modules:
+#------------------------------- System Module -------------------------------
+- module: system
+  metricsets:
+    - cpu
+    - memory
+    - network
+    - diskio 
+  enabled: true
+  period: 10s
+  processes: ['.*']
+
+name: "add_name_here"
+#----------------------------- Logstash output --------------------------------
+output.logstash:
+  # The Logstash hosts
+  hosts: ["SWARM_MASTER:5044"]
+
+#-------------------------- Elasticsearch output ------------------------------
+#output.elasticsearch:
+#  hosts: ["10.11.1.17:9200"]
+#  index: "metricbeat-%{+yyyy.MM.dd}"

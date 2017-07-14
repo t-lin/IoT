@@ -1,0 +1,32 @@
+version: "3"
+services:
+  elasticsearch:
+    image: elasticsearch:latest
+    ports:
+      - 9200:9200
+    deploy:
+      placement:
+        constraints:
+          - node.Hostname == swarm-master
+  kibana:
+    image: kibana:latest
+    ports:
+      - 5601:5601
+    deploy:
+      placement:
+        constraints:
+          - node.Hostname == swarm-master
+    environment:
+      - ELASTICSEARCH_URL=http://SWARM_MASTER:9200
+  logstash:
+    image: docker.elastic.co/logstash/logstash:5.4.2 
+    ports:
+      - 5044:5044
+    deploy:
+      placement:
+        constraints:
+          - node.Hostname == swarm-master
+    
+    volumes:
+      - /home/ubuntu/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - /home/ubuntu/logstash-pipeline/:/usr/share/logstash/pipeline/

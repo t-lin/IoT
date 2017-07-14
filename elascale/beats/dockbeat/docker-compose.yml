@@ -1,0 +1,10 @@
+version: "3"
+services:
+  dockbeat:
+    image: ingensi/dockbeat
+    deploy:
+      mode: global
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/ubuntu/dockbeat.yml:/etc/dockbeat/dockbeat.yml
+      - /volumes/dockbeat-logs/:/var/logs/dockbeat

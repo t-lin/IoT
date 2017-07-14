@@ -1,8 +1,10 @@
 #!/usr/bin/env python
+import os
 import sys
 import json
 import threading
 import time
+import shutil
 
 import spur
 
@@ -56,6 +58,7 @@ spark_overlay_network_name = 'spark'
 spark_memory_reserve = '1G'
 spark_memory_limit = '1250M'
 initial_workers_ip = []
+#TODO: Make flavors configurable
 flavors_name_workers = [medium_flavor, medium_flavor, medium_flavor, medium_flavor, medium_flavor]
 initial_workers_name = []
 
@@ -65,7 +68,8 @@ initial_aggs_ip = []
 initial_aggs_name = []
 kafka_memory_reserve = '412M'
 kafka_memory_limit = '512M'
-flavors_name_aggs = [small_flavor, small_flavor, small_flavor, small_flavor, small_flavor]
+#TODO: Make flavors configurable
+flavors_name_aggs = [medium_flavor, medium_flavor, medium_flavor, medium_flavor, medium_flavor]
 
 # cassandra info
 ds_role = "iot-ds"
@@ -82,6 +86,8 @@ wavecloud_token = 'hr1px97yozs5qw3gw33onsjykm9kh4of'
 master_shell = ''
 controller_shell = ''
 
+# Path of current Python file
+file_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 # core_workers_name = ["core-worker"]
 
@@ -112,7 +118,7 @@ def init(is_creation_time=False, local=False):
     controller_shell = ssh_to(controller_ip)
     if not is_creation_time and not local:
         swarm_master_ip = get_swarm_master_ip()
-        master_shell = ssh_to(swarm_master_ip, user_name='ubuntu', node_name=swarm_master_name, mode='key')
+        master_shell = ssh_to(swarm_master_ip, user_name=ssh_user, node_name=swarm_master_name, mode='key')
     elif local:
         master_shell = ssh_to(controller_ip)
     load_initial_nodes_name()
@@ -231,7 +237,7 @@ def provision_iot_controller(driver='', ip=''):
     if driver == 'openstack':
         create_vm(controller_name, user, small_flavor, vm_image_name, 'CORE', driver='openstack')
         iot_controller_ip = get_node_ip(controller_name)
-        iot_controller_shell = ssh_to(iot_controller_ip, 'ubuntu', controller_name, mode='key')
+        iot_controller_shell = ssh_to(iot_controller_ip, ssh_user, controller_name, mode='key')
         try:  # installing docker-machine
             iot_controller_shell.run(["wget",
                                       "https://github.com/docker/machine/releases/download/v0.10.0/docker-machine-Linux-x86_64"],
@@ -254,7 +260,7 @@ def provision_iot_controller(driver='', ip=''):
             print("Something went wrong when provisioning IoT controller.")
             print(inst.args)
         # here we set the IoT controller to the machine on the CORE Cloud
-        controller_shell = ssh_to(iot_controller_ip, 'ubuntu', controller_name, mode='key')
+        controller_shell = ssh_to(iot_controller_ip, ssh_user, controller_name, mode='key')
         print("\nIoT controller has been created ...")
 
 
@@ -322,7 +328,7 @@ def get_token_and_master_ip_port():
 
 def join_node_to_swarm_cluster(node_ip, node_name):
     token, master_ip_port = get_token_and_master_ip_port()
-    shell = ssh_to(ip=node_ip, user_name='ubuntu', node_name=node_name, mode='key')
+    shell = ssh_to(ip=node_ip, user_name=ssh_user, node_name=node_name, mode='key')
     with shell:
         result = shell.run(["sudo", "docker", "swarm", "join", "--token", token, master_ip_port],
                            store_pid="True", allow_error=True, encoding="utf8")
@@ -339,7 +345,7 @@ def create_swarm_cluster():
     load_initial_aggs_ip()
     load_initial_ds_ip()
 
-    master_shell = ssh_to(swarm_master_ip, user_name='ubuntu', node_name=swarm_master_name, mode='key')
+    master_shell = ssh_to(swarm_master_ip, user_name=ssh_user, node_name=swarm_master_name, mode='key')
 
     result = master_shell.run(["sudo", "docker", "swarm", "init"], store_pid="True", encoding="utf8")
     if result.return_code > 0:
@@ -383,9 +389,9 @@ def detach_swarm_cluster():
     result = master_shell.run(["sudo", "docker", "swarm", "leave", "--force"], store_pid="True", allow_error=True,
                               encoding="utf8")
     if result.return_code > 0:
-        print(result.stderr_output)
+        print_red(result.stderr_output)
     else:
-        print(swarm_master_name + " " + result.output)
+        print_red(swarm_master_name + " " + result.output)
 
 
 def label_a_node(node_name, loc='', role=''):
@@ -580,11 +586,11 @@ def deploy_vis_monomarks():
     if result.return_code > 0:
         print(result.stderr_output)
     else:
-        print("\nIoT Platform Console:", "http://" + swarm_master_ip + ":5000\n")
+        print("IoT Platform Console: http://" + swarm_master_ip + ":5000\n")
 
 
 def deploy_vis_weave():
-    print("Deploying the Weave Dashboard ...")
+    print("\nDeploying the Weave Dashboard ...")
     init(is_creation_time=False)
     thread = [ConnectToWeaveThread(swarm_master_ip, swarm_master_name, is_swarm_master=True)]
 
@@ -603,7 +609,166 @@ def deploy_vis_weave():
     for i in range(0, len(thread)):
         thread[i].join()
 
-    print("\nIoT Platform Weave Dashboard:", "http://" + swarm_master_ip + ":4040")
+    print("IoT Platform Weave Dashboard: http://" + swarm_master_ip + ":4040")
+
+
+def deploy_elk():
+    print("\nDeploying ELK on swarm master ...")
+
+    # Copy over ELK docker-compose file, and update SWARM_MASTER field
+    with master_shell.open("/home/" + ssh_user + "/elk-docker-compose.yml", "wb") as remote_file:
+        with open(file_dir_path + "/elascale/elk/docker-compose.yml", "rb") as local_file:
+            shutil.copyfileobj(local_file, remote_file)
+
+    cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g elk-docker-compose.yml"
+    result = master_shell.run(cmd.split(), store_pid="True",
+                                allow_error=True, encoding="utf8")
+
+    # Copy over required config and pipeline files
+    # Configure SWARM_MASTER field in conf file
+    if result.return_code == 0:
+        cmd = "mkdir -p logstash-pipeline"
+        result = master_shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+    if result.return_code == 0:
+        with master_shell.open("/home/" + ssh_user + "/logstash-pipeline/logstash.conf", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/elk/pipeline/logstash.conf", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g logstash-pipeline/logstash.conf"
+        result = master_shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+    if result.return_code == 0:
+        with master_shell.open("/home/" + ssh_user + "/logstash.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/elk/config/logstash.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+    # Deploy and start ELK stack
+    if result.return_code == 0:
+        cmd = "sudo docker stack deploy -c elk-docker-compose.yml ELK-monitor"
+        result = master_shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+    if result.return_code > 0:
+        print("ERROR: Failed to fully deploy ELK")
+        print(result.stderr_output)
+    else:
+        print("ELK has been deployed! Allow up to 3 minutes for all services to come up.")
+        print("Kibana dashboard page is at: http://" + swarm_master_ip + ":5601")
+        return str(result.output)
+
+
+def deploy_beats():
+    print("\nDeploying Metricbeat and Dockbeat throughout cluster nodes ...")
+
+    # Concateate lists of IPs
+    vm_ips = initial_aggs_ip + initial_workers_ip + initial_ds_ip
+    vm_names = initial_aggs_name + initial_workers_name + initial_db_name
+    assert len(vm_ips) == len(vm_names)
+
+    # Copy over dockbeat and metricbeat YAML files to all VMs
+    # Then configure the ElasticSearch IP
+    for index in range(0, len(vm_ips)):
+        shell = ssh_to(vm_ips[index], user_name=ssh_user, node_name=vm_names[index], mode='key')
+        with shell.open("/home/" + ssh_user + "/dockbeat.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/dockbeat/dockbeat.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        with shell.open("/home/" + ssh_user + "/metricbeat.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/metricbeat/metricbeat.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g dockbeat.yml"
+        result = shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g metricbeat.yml"
+            result = shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            # For some reason *.yml doesn't work?! Specifying files directly
+            cmd = "sudo chmod og-w dockbeat.yml"
+            result = shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            # For some reason *.yml doesn't work?! Specifying files directly
+            cmd = "sudo chmod og-w metricbeat.yml"
+            result = shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            cmd = "sudo mkdir -p /volumes/dockbeat-logs"
+            result = shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+
+    # Master should have beats too...
+    if result.return_code == 0:
+        with master_shell.open("/home/" + ssh_user + "/dockbeat.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/dockbeat/dockbeat.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        with master_shell.open("/home/" + ssh_user + "/metricbeat.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/metricbeat/metricbeat.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g dockbeat.yml"
+        result = master_shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            cmd = "sed -i s/SWARM_MASTER/" + swarm_master_ip + "/g metricbeat.yml"
+            result = master_shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            # For some reason *.yml doesn't work?! Specifying files directly
+            cmd = "sudo chmod og-w dockbeat.yml"
+            result = master_shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            # For some reason *.yml doesn't work?! Specifying files directly
+            cmd = "sudo chmod og-w metricbeat.yml"
+            result = master_shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            cmd = "sudo mkdir -p /volumes/dockbeat-logs"
+            result = master_shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+    if result.return_code == 0:
+        # Copy over docker-compose files to swarm master
+        with master_shell.open("/home/" + ssh_user + "/dockbeat-docker-compose.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/dockbeat/docker-compose.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        with master_shell.open("/home/" + ssh_user + "/metricbeat-docker-compose.yml", "wb") as remote_file:
+            with open(file_dir_path + "/elascale/beats/metricbeat/docker-compose.yml", "rb") as local_file:
+                shutil.copyfileobj(local_file, remote_file)
+
+        # Deploy dockbeat and metricbeat to swarm nodes
+        cmd = "sudo docker stack deploy -c dockbeat-docker-compose.yml dockbeat"
+        result = master_shell.run(cmd.split(), store_pid="True",
+                                    allow_error=True, encoding="utf8")
+
+        if result.return_code == 0:
+            cmd = "sudo docker stack deploy -c metricbeat-docker-compose.yml metricbeat"
+            result = master_shell.run(cmd.split(), store_pid="True",
+                                        allow_error=True, encoding="utf8")
+
+    if result.return_code > 0:
+        print("ERROR: Failed to fully deploy Metricbeat and Dockbeat")
+        print(result.stderr_output)
+    else:
+        print("Metricbeat and Dockbeat has been deployed! Allow up to 5 minutes for all services to come up.")
+        return str(result.output)
 
 
 class ConnectToWeaveThread(threading.Thread):
@@ -757,11 +922,21 @@ def remove_kafka_service():
     print("Kafka service has been deleted.")
 
 
+def remove_elk_service():
+    #TODO
+    return
+
+
+def remove_beats_service():
+    #TODO
+    return
+
+
 def remove_swarm_node(node_name, node_ip=""):
     if node_ip == "":
         node_ip = get_node_ip(node_name)
 
-    shell = ssh_to(node_ip, user_name='ubuntu', node_name=node_name, mode='key')
+    shell = ssh_to(node_ip, user_name=ssh_user, node_name=node_name, mode='key')
     result = shell.run(["sudo", "docker", "swarm", "leave"], store_pid="True", allow_error=True, encoding="utf8")
     if result.return_code > 0:
         print_red(result.stderr_output)
@@ -839,34 +1014,38 @@ def create_iot_platform():
     global swarm_master_ip
     t1 = time.time()
     init(is_creation_time=True)
-    monitor.init_monitoring()
+    #monitor.init_monitoring()
     # provision_iot_controller(driver='openstack')
     provision_cluster()
     swarm_master_ip = get_swarm_master_ip()  # we know which node is gonna be the master by its name.
     create_swarm_cluster()
     label_nodes()
-    deploy_spark_cluster()
-    deploy_kafka()
-    deploy_rabbitmq()
-    deploy_cassandra()
+    #deploy_spark_cluster()
+    #deploy_kafka()
+    #deploy_rabbitmq()
+    #deploy_cassandra()
     deploy_vis_monomarks()
     deploy_vis_weave()
+    deploy_elk()
+    deploy_beats()
     t2 = time.time()
-    print("\n\nApplication has been deployed in (seconds): ", t2 - t1)
+    print("\n\nInfrastructure has been deployed in %s (seconds): " % int(round(t2 - t1)))
 
 
 # removes the IoT platform carelessly. Use with care.
 def remove_iot_platform():
     t1 = time.time()
     init(is_creation_time=False)
-    remove_spark_service()
-    remove_kafka_service()
-    remove_cassandra_service()
+    remove_elk_service()
+    remove_beats_service()
+    #remove_spark_service()
+    #remove_kafka_service()
+    #remove_cassandra_service()
     detach_swarm_cluster()
     deprovision_cluster()
-    monitor.init_monitoring()
+    #monitor.init_monitoring()
     t2 = time.time()
-    print("\n\nInfrastructure has been deprovisioned in (seconds): ", t2 - t1)
+    print("\n\nInfrastructure has been deprovisioned in %s (seconds): " % int(round(t2 - t1)))
 
 
 def hard_remove_iot_platform():
@@ -936,6 +1115,8 @@ if __name__ == "__main__":
     elif sys.argv[1] == "destroy":
         #print("destroy")
         remove_iot_platform()
+    else:
+        print ("ERROR: Unknown first argument")
 
     exit(0)
     # init(True, local=False)
