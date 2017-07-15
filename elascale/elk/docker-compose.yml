@@ -1,7 +1,7 @@
 version: "3"
 services:
   elasticsearch:
-    image: elasticsearch:latest
+    image: perplexedgamer/elastic-savi:latest
     ports:
       - 9200:9200
     deploy:
@@ -9,7 +9,7 @@ services:
         constraints:
           - node.Hostname == swarm-master
   kibana:
-    image: kibana:latest
+    image: perplexedgamer/kibana-savi:latest
     ports:
       - 5601:5601
     deploy:
@@ -19,7 +19,7 @@ services:
     environment:
       - ELASTICSEARCH_URL=http://SWARM_MASTER:9200
   logstash:
-    image: docker.elastic.co/logstash/logstash:5.4.2 
+    image: perplexedgamer/logstash-savi:latest
     ports:
       - 5044:5044
     deploy:

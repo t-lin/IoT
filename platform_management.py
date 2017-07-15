@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import shutil
+import subprocess
 
 import spur
 
@@ -651,11 +652,23 @@ def deploy_elk():
         result = master_shell.run(cmd.split(), store_pid="True",
                                     allow_error=True, encoding="utf8")
 
+        print("Starting ELK services! Waiting for services to come up (this may take a few minutes)")
+
+    # Need to configure dockbeat and metricbeat and Kibana
+    # Sleep 180 put in the bash script
+    cmd = file_dir_path + "/elascale/post-setup-elk.sh"
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+    if error is not None:
+        print "ERROR: Post-setup-elk failed"
+        print error
+        return
+
     if result.return_code > 0:
         print("ERROR: Failed to fully deploy ELK")
         print(result.stderr_output)
     else:
-        print("ELK has been deployed! Allow up to 3 minutes for all services to come up.")
+        print("Completed ELK deployment and configuration")
         print("Kibana dashboard page is at: http://" + swarm_master_ip + ":5601")
         return str(result.output)
 
@@ -1026,8 +1039,8 @@ def create_iot_platform():
     #deploy_cassandra()
     deploy_vis_monomarks()
     deploy_vis_weave()
-    deploy_elk()
     deploy_beats()
+    deploy_elk()
     t2 = time.time()
     print("\n\nInfrastructure has been deployed in %s (seconds): " % int(round(t2 - t1)))
 
