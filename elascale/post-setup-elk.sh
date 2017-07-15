@@ -10,8 +10,8 @@ while ! nc -z -w 1 ${SWARM_MASTER} 9200; do
     sleep 1
 done
 
-# Sleep 10 more seconds, just in case
-sleep 10
+# Sleep 60 more seconds, just in case
+sleep 60
 
 curl -s -H 'Content-Type: application/json' -XPUT "http://${SWARM_MASTER}:9200/_template/metricbeat" -d@${FILE_DIR}/beats/metricbeat/metricbeat.template.json
 curl -s -H 'Content-Type: application/json' -XPUT "http://${SWARM_MASTER}:9200/_template/dockbeat" -d@${FILE_DIR}/beats/dockbeat/dockbeat.template.json
