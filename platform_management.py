@@ -179,14 +179,20 @@ def create_vm(vm_name, user_name, flavor, image, region, driver='openstack', ip=
     :type driver: str supported as of now are: openstack and generic
     """
     if driver == 'openstack':
-        result = controller_shell.run(
-            ["docker-machine", "create", "--driver", driver, "--openstack-auth-url", auth_url,
+        os_parameters = ["docker-machine", "create", "--driver", driver, "--openstack-auth-url", auth_url,
              "--openstack-insecure", "--openstack-username", user_name,
              "--openstack-password", password, "--openstack-net-name", network_name,
              "--openstack-flavor-name", flavor, "--openstack-image-name", image,
              "--openstack-tenant-name", tenant_name, "--openstack-region", region,
-             "--openstack-sec-groups", security_group, "--openstack-ssh-user", ssh_user, vm_name],
-             store_pid="True", allow_error=True, encoding="utf8")
+             "--openstack-sec-groups", security_group, "--openstack-ssh-user", ssh_user]
+
+        if vm_name == swarm_master_name:
+            # Associate a floating IP with the swarm master for viewing dashboards
+            os_parameters.extend(["--openstack-floatingip-pool", "ext_net"])
+
+        os_parameters.append(vm_name)
+        result = controller_shell.run(os_parameters, store_pid="True",
+                                        allow_error=True, encoding="utf8")
 
     elif driver == 'generic':
         result = controller_shell.run(
@@ -1043,7 +1049,7 @@ def create_iot_platform():
     deploy_beats()
     deploy_elk()
     t2 = time.time()
-    print("\n\nInfrastructure has been deployed in %s (seconds): " % int(round(t2 - t1)))
+    print("\n\nInfrastructure has been deployed in %s seconds" % int(round(t2 - t1)))
 
 
 # removes the IoT platform carelessly. Use with care.
@@ -1059,7 +1065,7 @@ def remove_iot_platform():
     deprovision_cluster()
     #monitor.init_monitoring()
     t2 = time.time()
-    print("\n\nInfrastructure has been deprovisioned in %s (seconds): " % int(round(t2 - t1)))
+    print("\n\nInfrastructure has been deprovisioned in %s seconds" % int(round(t2 - t1)))
 
 
 def hard_remove_iot_platform():
