@@ -28,6 +28,7 @@ tenant_name = None
 util = None
 regions_name = None
 core = None
+edge_names = None
 
 small_flavor = "m1.small"
 medium_flavor = "m1.medium"
@@ -276,9 +277,9 @@ def provision_cluster():
 
     for i in range(0, len(initial_workers_name)):
         thread.append(CreateVMThread(i + base, initial_workers_name[i], username, flavors_name_workers[i], vm_image_name,
-                                     regions_name[i]))
+                                     edge_names[i]))
         thread.append(CreateVMThread(i + base + len(initial_workers_name), initial_aggs_name[i], username,
-                                     flavors_name_aggs[i], vm_image_name, regions_name[i]))
+                                     flavors_name_aggs[i], vm_image_name, edge_names[i]))
 
     for i in range(0, len(initial_db_name)):
         thread.append(CreateVMThread(i + base + len(initial_workers_name) + len(initial_aggs_name),
@@ -410,7 +411,7 @@ def label_a_node(node_name, loc='', role=''):
 
 def label_nodes():
     label_a_node(swarm_master_name, loc=locations_name[0], role=manager_role)
-    for i in range(0, len(regions_name)):
+    for i in range(0, len(edge_names)):
         label_a_node(initial_workers_name[i], loc=locations_name[i], role=edge_worker_role)
         label_a_node(initial_aggs_name[i], loc=locations_name[i], role=agg_role)
         print("Role and Location labels have been updated.")
@@ -1094,9 +1095,10 @@ def load_config_file():
     tenant_name = credentials['tenant']
 
     # Load regions
-    global regions_name, core
+    global regions_name, core, edge_names
     regions_name = util.load_regions()
     core = regions_name[0]  # the first one would be the core
+    edge_names = regions_name[1:]
 
     # Load VM information for boot-up
     global vm_image_name, ssh_user, network_name, security_group, privatekey_path_linux

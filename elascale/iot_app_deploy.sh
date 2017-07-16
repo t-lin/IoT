@@ -19,7 +19,7 @@ echo
 
 # SCP docker-compose file over to swarm-maser
 echo "Copying docker-compose file..."
-docker-machine scp ${FILE_DIR}/iot_app/docker-compose.yml swarm-master:iot-app-docker-compose.yml
+docker-machine scp ${FILE_DIR}/iot_app/docker-compose.yml swarm-master:~/iot-app-docker-compose.yml
 
 # Update SWARM_AGG_HOSTNAME and SWARM_AGG placeholders in .yml file
 docker-machine ssh swarm-master sed -i s/CORE_DB_HOSTNAME/${CORE_DB_HOSTNAME}/g iot-app-docker-compose.yml
@@ -32,10 +32,10 @@ docker-machine ssh swarm-master sudo docker stack deploy -c iot-app-docker-compo
 
 echo -e "\nDeployed Kafka and Zookeeper...  Deploying sensors to the aggregator..."
 
-docker-machine ssh swarm-master sudo docker service create --replicas 1 --name iot_sensor --constraint node.hostname==${SWARM_AGG_HOSTNAME} perplexedgamer/sensor:v2 ${SWARM_AGG} 9092
-docker-machine ssh swarm-master sudo docker service create --replicas 1 --name iot_edge_processor --constraint node.Hostname==${SWARM_WORKER_HOSTNAME} perplexedgamer/edge_processor:v3 ${SWARM_AGG} ${CORE_DB}
+docker-machine ssh swarm-master sudo docker service create --detach=true --replicas 1 --name iot_sensor --constraint node.hostname==${SWARM_AGG_HOSTNAME} perplexedgamer/sensor:v2 ${SWARM_AGG} 9092
+docker-machine ssh swarm-master sudo docker service create --detach=true --replicas 1 --name iot_edge_processor --constraint node.Hostname==${SWARM_WORKER_HOSTNAME} perplexedgamer/edge_processor:v3 ${SWARM_AGG} ${CORE_DB}
 
-echo -e "\nDeployed sensors and Cassandra; IoT Application deployment complete!"
+echo -e "\nDeployed sensors, processors, and Cassandra; IoT Application deployment complete!"
 
 echo -e "Current services status:\n"
 docker-machine ssh swarm-master sudo docker service ls
