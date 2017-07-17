@@ -1,0 +1,12 @@
+#!/bin/bash
+if [[ $# -ne 1 ]]; then
+    echo "ERROR: Expecting a single parameter"
+    echo "Usage: ./scale_sensors <target # of sensors>"
+else
+    if [[ ! "$1" -gt 0 ]]; then
+        echo "ERROR: First parameter must be an integer greater than 0"
+        exit 0
+    fi 2> /dev/null
+fi
+
+docker-machine ssh swarm-master sudo docker service scale iot_sensor=$1
