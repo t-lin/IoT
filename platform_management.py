@@ -52,7 +52,7 @@ core_worker_role = "iot-core-worker"
 edge_worker_role = "iot-edge-worker"
 manager_role = "manager"
 
-locations_name = ["Toronto", "Carleton", "Waterloo", "York"] #TODO: Make this configurable
+locations_name = ["Toronto-CORE", "Edge"] #TODO: Make this configurable
 
 # Spark info
 #  do not change this, as other names don't work.
@@ -416,14 +416,14 @@ def label_a_node(node_name, loc='', role=''):
 
 
 def label_nodes():
-    label_a_node(swarm_master_name, loc=locations_name[0], role=manager_role)
+    label_a_node(swarm_master_name, loc=core, role=manager_role)
     for i in range(0, len(edge_names)):
-        label_a_node(initial_workers_name[i], loc=locations_name[i], role=edge_worker_role)
-        label_a_node(initial_aggs_name[i], loc=locations_name[i], role=agg_role)
+        label_a_node(initial_workers_name[i], loc=edge_names[i], role=edge_worker_role)
+        label_a_node(initial_aggs_name[i], loc=edge_names[i], role=agg_role)
         print("Role and Location labels have been updated.")
 
     for i in range(0, len(initial_db_name)):
-        label_a_node(initial_db_name[i], loc=locations_name[0], role=ds_role)
+        label_a_node(initial_db_name[i], loc=core, role=ds_role)
 
 
 def get_swarm_master_ip():
@@ -506,7 +506,7 @@ def deploy_spark_cluster():
     for i in range(0, len(initial_workers_name)):
         command = ["sudo", "docker", "service", "create", "--name", initial_workers_name[i],
                    "--network", spark_overlay_network_name,
-                   "--constraint", "node.labels.loc==" + locations_name[i],
+                   "--constraint", "node.labels.loc==" + edge_names[i],
                    "--constraint", "node.labels.role==" + edge_worker_role,
                    "-p", "808" + str(i + 1) + ":8080",
                    "-e", "NODE_TYPE=slave",
@@ -536,7 +536,7 @@ def deploy_kafka():
     for i in range(0, len(initial_aggs_name)):
         result = master_shell.run(
             ["sudo", "docker", "service", "create", "--name", initial_aggs_name[i], "--constraint",
-             "node.labels.loc==" + locations_name[i], "--constraint", "node.labels.role==" + agg_role, "-p",
+             "node.labels.loc==" + edge_names[i], "--constraint", "node.labels.role==" + agg_role, "-p",
              "218" + str(i) + ":2180", "-p", "909" + str(i) + ":9090", "--env",
              "ADVERTISED_HOST=" + initial_aggs_ip[i],
              "--env", "ADVERTISED_PORT=" + "909" + str(i), "--reserve-memory", kafka_memory_reserve,
@@ -559,7 +559,7 @@ def deploy_cassandra():
     for i in range(0, len(initial_db_name)):
         command = ["sudo", "docker", "service", "create", "--name", initial_db_name[i],
                    "--network", cassandra_overlay_network_name,
-                   "--constraint", "node.labels.loc==" + locations_name[0], "--constraint", "node.labels.role==" + ds_role,
+                   "--constraint", "node.labels.loc==" + core, "--constraint", "node.labels.role==" + ds_role,
                    "--reserve-memory", cassandra_memory_reserve, "--limit-memory", cassandra_memory_limit, "cassandra"]
         result = master_shell.run(command, store_pid="True", allow_error=True, encoding="utf8")
         if result.return_code > 0:
